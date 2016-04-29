@@ -1,0 +1,1 @@
+CREATE TABLE temp_reading (reading_time TIMESTAMP, reading_value NUMERIC);
