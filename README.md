@@ -116,11 +116,11 @@ public class LambdaInvoke {
 Follow the instructions below to build and install the `LambdaInvoke` class:
   
 1. Install **git** and **maven** on the database server instance, if they're not already installed.  
-1. As the **oracle** user, download and build the `rdbms-lambda-integ` project from github. Steps:  
+1. As the **oracle** user, download and build the `aws-lambda-rdbms-integration` project from github. Steps:  
    ```
    sudo su - oracle
    git clone https://github.com/awslabs/aws-lambda-rdbms-integration.git
-   cd rdbms-lambda-integ/oracle
+   cd aws-lambda-rdbms-integration/oracle
    mvn clean package
    ```
      
@@ -191,11 +191,11 @@ For PostgreSQL, we will use the PL/Python language to create our user-defined fu
    python -c "import boto; import boto3; print 'AWS SDK verified OK'"
    ```
 
-1. Download the `rdbms-lambda-integ` project as the postgres user:
+1. Download the `aws-lambda-rdbms-integration` project as the postgres user:
    ```
    sudo su - postgres
    git clone https://github.com/awslabs/aws-lambda-rdbms-integration.git
-   cd rdbms-lambda-integ/postgresql
+   cd aws-lambda-rdbms-integration/postgresql
    ```
   
 #### Step 2: User-defined functions
