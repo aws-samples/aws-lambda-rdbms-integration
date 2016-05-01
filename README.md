@@ -1,46 +1,40 @@
 # From SQL to Microservices: Integrating AWS Lambda with Relational Databases 
 
+This is the code repository associated with the AWS Big Data Blog post, ["From SQL to Microservices: Integrating AWS Lambda with Relational Databases"]().
+
+----------
+
 With a simple internet search, you will quickly find many articles describing the appeal of [Microservices](http://martinfowler.com/articles/microservices.html) architectures, and explaining why [AWS Lambda](https://aws.amazon.com/lambda/) is an excellent microservices compute platform. 
  
-Did you know that it may be possible for you to take advantage of this transformational technology from within your existing relational database application?  We will explore how to call Lambda functions from a relational database running on EC2, using SQL user-defined functions.
+Did you know that it may be possible for you to take advantage of this transformational technology from within your existing relational database application? In this post, we explore how to integrate your EC2 hosted Oracle or PostgreSQL database with AWS Lambda, allowing your database application to participate in a microservices architecture.
 
 ![](images/LambdaSQLAPI.png)
 
 Here are a few of the reasons why you might find this capability useful:
 
-- **Instrumentation:** Use database triggers to call a Lambda function when important data is changed in the database. Your Lambda function can easily integrate with Amazon Cloudwatch, allowing you to create custom metrics, dashboards and alarms based on changes to your data.
+- **Instrumentation:** Use database triggers to call a Lambda function when important data is changed in the database. Your Lambda function can easily integrate with Amazon CloudWatch, allowing you to create custom metrics, dashboards and alarms based on changes to your data.
 
-- **Outbound streaming:** Again, use triggers to call Lambda when key data is modified. Your Lambda function can post messages to other AWS services such as Amazon SQS, SNS, SES, or Kinesis Firehose, to send notifications, trigger external workflows, or to push events and data to downstream systems such as an Amazon Redshift data warehouse.
+- **Outbound streaming:** Again, use triggers to call Lambda when key data is modified. Your Lambda function can post messages to other AWS services such as Amazon SQS, Amazon SNS, Amazon SES, or Amazon Kinesis Firehose, to send notifications, trigger external workflows, or to push events and data to downstream systems, such as an Amazon Redshift data warehouse.
 
 - **Access external data sources:** Call Lambda functions from within your SQL code to retrieve data from external web services, read messages from Amazon Kinesis streams, query data from other databases, and more. 
 
-- **Enable incremental modernization:** Improve agility, scalability, reliability, and eliminate database vendor lock-in by evolving in steps from an existing monolithic database design to a [well-architected](https://aws.amazon.com/blogs/aws/are-you-well-architected/), modern microservices approach. Incrementally migrate business logic embodied in database procedures into database agnostic Lambda functions, while preserving compatibility with remaining SQL packages.
+- **Incremental modernization:** Improve agility, scalability, and reliability, and eliminate database vendor lock-in by evolving in steps from an existing monolithic database design to a [well-architected](https://aws.amazon.com/blogs/aws/are-you-well-architected/), modern microservices approach. Incrementally migrate business logic embodied in database procedures into database-agnostic Lambda functions, while preserving compatibility with remaining SQL packages.
 
-Later on, in [PART 2](#part-2---example-use-cases), we will revisit these scenarios, but first things first. We need to establish the interface that enables SQL code to invoke Lambda functions. 
+I’ll revisit these scenarios in [Part 2](#part-2---example-use-cases), but first you need to establish the interface that enables SQL code to invoke Lambda functions.
 
-## PART 1 - Set up SQL-to-Lambda interface
+## Part 1 - Set up SQL-to-Lambda interface
 
-We will create user-defined functions in the database using a programming language that is supported by both the RDBMS and the AWS SDK. The user-defined functions call the AWS SDK to invoke specified Lambda functions, passing parameters and retrieving results in the form of JSON object strings. 
+You will create user-defined functions in the database in a programming language supported by both the RDBMS and the AWS SDK. These functions use the AWS SDK to invoke Lambda functions, passing data in the form of JSON strings.
   
-These user-defined database functions serve as a flexible interface allowing SQL code running in your database to call microservice functions hosted in AWS Lambda. The Lambda functions embody your business logic, and may be implemented in any of several supported programming languages (currently Javascript, Java, or Python). 
-  
-I will show you how to set this up for Oracle (using Java) and PostgreSQL (using Python).
-_(While untried, it should be possible to implement similar mechanisms in other databases, using, for example, the .NET SDK for SQL Server, the C++ SDK for MySQL, etc.)_
+This post shows you the steps for Oracle and PostgreSQL. 
 
-### Create a testing function in Lambda
+### Create a test function in Lambda
 
-This is a simple Python function that simply returns a string containing the input JSON parameters.  
-Steps:  
-
-1. Sign in to the [AWS Management Console](http://console.aws.amazon.com/) and open the AWS Lambda console.
-1. Choose **Create a Lambda function**.
-1. On the **Select blueprint** page, click **Skip**.
-1. The **Configure Function** page appears.  
-  
-    ![](images/configureFunction1.png)
-     
-1. Enter `lambdaTest` in the **Name** field, and select `Python 2.7` in the **Runtime** field.  
-1. Paste the following code into the **Lambda Function Code** field: 
+1.  Sign in to the [AWS Management Console](http://console.aws.amazon.com/) and open the AWS Lambda console.
+2.  Choose **Create a Lambda function**.
+3.  On the **Select blueprint** page, choose **Skip**.
+4.  On the **Configure Function** page, enter `lambdaTest` for **Name**, and choose **Python 2.7** for **Runtime**.
+5.  Paste the following code for **Lambda Function Code**:
 
     ```
 	def lambda_handler(event, context):
@@ -48,32 +42,30 @@ Steps:
 	    output["Status"] = "OK"
 	    return output
     ```
-1. Assign a **Role** to the function. If you have used AWS Lambda before, you may select an existing role, otherwise select the option to create a new `Basic execution role`.      
-1. The value of **Timeout** defaults to 3 seconds, which is fine for this short function. However, when you implement more useful functions later, you must increase the timeout as necessary to give your function plenty of time to execute.  
-1. Accept all other defaults and click **Next**, then click **Create Function**.  
-1. Test your function from the console by clicking the **Test** button, and verify that it runs with no errors, and that it returns the expected result. 
+6.  Assign a value for **Role** to the function. If you have used Lambda before, you can select an existing role; otherwise, select the option to create a new `Basic execution role`.
+7.  The value of **Timeout** defaults to 3 seconds, which is fine for this function. Other functions may need more time to execute.
+8.  Accept all other defaults and choose **Next**, **Create Function**.
+9.  Test your function from the console by choosing **Test**, and verifying that it runs with no errors and that it returns a JSON object reflecting the input data with an added “Status” key.
 
     ![](images/lambdaTestResult.png)
   
 ### Create IAM EC2 Instance Role
 
-The EC2 instance running your database server needs an associated EC2 Instance Role with an attached policy granting permission to invoke AWS Lambda functions.  
-   
-1. Open the [AWS Management Console](http://console.aws.amazon.com/) and launch the IAM console.  
-1. Create a new **Role**. Set **Role Name** to `rdbms-lambda-access`. Click **Next Step**.  
-1. Select **Amazon EC2** role type.  
-1. Select policy **AWSLambdaFullAccess**. Click **Next Step**.  
-1. Click **Create Role**.  
+The EC2 instance running your database server needs an associated role with an attached policy granting permission to invoke Lambda functions.
 
-### Create database on EC2 instance using role
+1.  Open the [AWS Management Console](http://console.aws.amazon.com/) and launch the IAM console.
+2.  Choose **Roles** and **Create New Role**. For **Role Name**, enter `rdbms-lambda-access` and choose **Next Step**.
+3.  On the **Select** **Role type** page, choose **Amazon EC2**.
+4.  On the **Attach** **Policy** page, choose **AWSLambdaFullAccess** and **Next Step**.
+5.  Choose **Create Role**.
 
-If you already have an Oracle or PostgreSQL server running on EC2, migrate it to a new instance so you can apply the newly created IAM role. You can do this by creating an Amazon Machine Image (AMI) from your existing EC2 instance, and launch a new instance from that AMI.
+### Create database on EC2 instance using the IAM role
 
-Or, to create a new database, manually launch a pre-configured Oracle or PostgreSQL AMI from the AWS Marketplace. Or, launch a vanilla Linux image and install the database yourself.
+Create a new database by launching a pre-configured Oracle or PostgreSQL AMI from the AWS Marketplace. Or, if you already have an Oracle or PostgreSQL server running on EC2, migrate it to a new instance so you can apply the newly created IAM role.
 
 As you launch your new instance, be sure to specify the new IAM role, `rdbms-lambda-access`, in the **Configure Instance Details** page.
 
-Connect to your new instance using ssh, and complete any necessary steps to ensure that your database is running and that you can connect with administrative privileges using the native database client.
+Connect to your new instance using SSH, and complete any necessary steps to ensure that your database is running and that you can connect with administrative privileges using the native database client.
 
 The following two sections are database vendor specific. If you are using PostgreSQL, skip to the [PostgreSQL Setup](#postgresql-setup) section below.
 
@@ -81,7 +73,7 @@ The following two sections are database vendor specific. If you are using Postgr
 
 #### Step 1: LambdaInvoke java class
   
-Oracle supports the use of java methods for user defined functions. The java class below uses the AWS SDK to invoke a named Lambda function (fn_name) in either synchronous (RequestResponse) or asynchronous (Event) mode, passing parameters in the form of a JSON string (fn_args):
+Oracle supports the use of Java methods for UDFs. The Java class below uses the AWS SDK to invoke a named Lambda function (fn\_name) in either synchronous (RequestResponse) or asynchronous (Event) mode, passing parameters in the form of a JSON string (fn\_argsJson):
 
 ```
 public class LambdaInvoke {
@@ -124,9 +116,9 @@ Follow the instructions below to build and install the `LambdaInvoke` class:
    mvn clean package
    ```
      
-   This builds a self contained jar file containing the `LambdaInvoke` java class and all its dependencies, including the AWS SDK class files.
+   This builds a self contained .jar file containing the `LambdaInvoke` java class and all its dependencies, including the AWS SDK class files.
   
-1. Verify that the EC2 instance role is correct and that we can connect to the AWS Lambda service and successfully call our function, using the main method included in the class:
+1. Verify that the EC2 instance role is correct and that you can connect to the AWS Lambda service and successfully call our function, using the main method included in the class:
    ```
    java -cp target/aws-rdbmsinteg-1.0.jar com.amazonaws.rdbmsinteg.LambdaInvoke
    ```
@@ -135,7 +127,7 @@ Follow the instructions below to build and install the `LambdaInvoke` class:
    {"Status": "OK", "name": "bob"}
    ```
   
-1. Load the jar file into the Oracle database:
+1. Load the .jar file into the Oracle database:
    ```
    loadjava -user system/<password> target/aws-rdbmsinteg-1.0.jar
    ``` 
@@ -161,13 +153,13 @@ CREATE OR REPLACE FUNCTION awslambda_fn(fn_name VARCHAR2, fn_argsJson VARCHAR2)
    cat sql/permissions.sql | sqlplus system/<password>
    ```
 
-1. Oracle's java keystore must trust the certificate authority (CA) used by the AWS service - by default it is empty. An easy way to fix this problem is to replace the default Oracle java keystore with a populated keystore from a standard java installation, e.g.:
+1. Oracle's Java keystore must trust the certificate authority (CA) used by the AWS service; by default it is empty. An easy way to fix this problem is to replace the default Oracle Java keystore with a populated keystore from a standard Java installation:
    ```
    cp $ORACLE_HOME/javavm/lib/security/{cacerts,cacerts.orig} 
    cat /usr/lib/jvm/jre-1.7.0-openjdk.x86_64/lib/security/cacerts > $ORACLE_HOME/javavm/lib/security/cacerts
    ```
 
-1. Log into the database, and test the awslambda_fn function, passing the name of our Lambda function and a JSON input parameter string:
+1. Log into the database, and test the awslambda_fn function, passing the name of your Lambda function and a JSON input parameter string:
    ```
    sqlplus system/<password>
    SQL> SELECT awslambda_fn('lambdaTest','{"name":"bob"}') AS lambdatest FROM DUAL;
@@ -177,11 +169,12 @@ CREATE OR REPLACE FUNCTION awslambda_fn(fn_name VARCHAR2, fn_argsJson VARCHAR2)
    {"Status": "OK", "name": "bob"}
    ```
    
-Success! Using an Oracle SQL select statement we have successfully invoked our test function on AWS Lambda, and retrieved the results.
+Success! Using an Oracle SQL select statement, you have successfully invoked your test function on Lambda, and retrieved the results.
+
 
 ### PostgreSQL Setup
 
-For PostgreSQL, we will use the PL/Python language to create our user-defined functions, leveraging the AWS Python SDK to launch Lambda functions and retrieve the results.
+For PostgreSQL, use the PL/Python language to create your UDFs, leveraging the AWS Python SDK to launch Lambda functions and retrieve the results.
 
 #### Step 1: Prerequisites
 
@@ -200,7 +193,7 @@ For PostgreSQL, we will use the PL/Python language to create our user-defined fu
   
 #### Step 2: User-defined functions
 
-Here is an example PostgreSQL function showing how the AWS SDK is used to invoke a named Lambda function in synchronous mode:
+The PostgreSQL function below uses the AWS SDK to invoke a named Lambda function in synchronous mode:
 ```
 CREATE LANGUAGE plpythonu;
 CREATE OR REPLACE FUNCTION awslambda_fn(fn_name text, fn_args text)
@@ -237,34 +230,26 @@ GRANT EXECUTE ON FUNCTION awslambda_fn(text, text) TO PUBLIC;
    (1 row)
    ```  
    
-Success! Using a PostgreSQL SQL select statement we have successfully invoked our test function on AWS Lambda, and retrieved the results.
+Success! Using a PostgreSQL SQL select statement, you have successfully invoked your test function on Lambda, and retrieved the results.
 
-Now, let's explore some interesting use cases for our new Lambda interface.
+Now, explore some interesting use cases for your new Lambda interface.
 
-## PART 2 - Example Use Cases
+## Part 2 - Example Use Cases
 
-Now that the mechanics are in place, we can quickly and easily create new Lambda functions to do useful things! Let's revisit some of the use cases identified in the opening section.
+Now that the mechanics are in place, you can create new Lambda functions to do useful things! Let's revisit some of the use cases mentioned earlier.
 
   
-### Instrumentation - Monitor and Alert with Amazon CloudWatch
+### Instrumentation: Monitor and Alert with Amazon CloudWatch
 
-Say we have an existing application which uses an Oracle database to track temperature sensor readings. We'll keep our example simple, and assume the readings are stored in a 2-column table, which you should create now:  
+Assume that you have an existing application which uses an Oracle database to track temperature sensor readings. Assume that the readings are stored in a two-column table:
 ```
 CREATE TABLE temp_reading (reading_time TIMESTAMP, reading_value NUMERIC);
 ```
 
-Let's enhance our application by leveraging Amazon CloudWatch to show the temperature readings over time, and to alert us immediately if a reading exceeds 80<sup>o</sup>C.
+You can forward new records via Lambda to CloudWatch, allowing you to plots graphs of the temperature readings, and to configure alerts when a reading exceeds a threshold.
 
-We will achieve this in two steps:  
-
-- Create a Lambda function to publish a temperature reading to Amazon CloudWatch.  
-- Create a database trigger to call the Lambda function for each new reading.  
-
-Here's how:  
-
-1. Create a new Python function in AWS Lambda by following the same process we used [earlier](#create-test-function-in-lambda).  
-   In the **Name** field, enter `lambdaTempReadingTrigger`.  
-   In the **Lambda Function Code** field, paste the function code below:   
+1. Create a new Python function in AWS Lambda by following the process used [earlier](#create-test-function-in-lambda).  
+   Name the function `lambdaTempReadingTrigger`, and use the function code below:
    
 	   ```
 		import boto3
@@ -284,14 +269,9 @@ Here's how:
 		   return {"Status":"OK"}
 	   ```
    
-   The **Role** assigned to the Lambda function must allow the `cloudwatch:PutMetricData` action. 
-   - Open the **IAM Console**
-   - Select the **Role** assigned to the function
-   - Click **Attach Policy**
-   - Select **CloudWatchFullAccess**
-   - Click **Attach Policy**. 
-   
-   Save and test the function. When prompted for **Input test event**, paste the sample input below:
+   Assign the policy **CloudWatchFullAccess** to the IAM role used by the Lambda function.
+   Set Timeout to 10 seconds.   
+   Save and test the function using this sample JSON input:
    
    ```
     {
@@ -326,7 +306,7 @@ Here's how:
 		/
 	```
 
-Now, when your application inserts a new reading into the `temp_reading` table, the value will be posted to the new `Temperature Reading` metric in Amazon CloudWatch.
+Now, when your application inserts a new reading into the `temp_reading` table, the value will be posted to the new `Temperature Reading` metric in CloudWatch.
 
 Simulate adding a series of temperature readings to test our CloudWatch integration:  
 ```
@@ -341,40 +321,29 @@ INSERT INTO temp_reading VALUES (CURRENT_TIMESTAMP - INTERVAL '20' MINUTE, 85);
 INSERT INTO temp_reading VALUES (CURRENT_TIMESTAMP - INTERVAL '10' MINUTE, 86);
 ```
 
-Open the AWS Console, and select **CloudWatch**. 
-- On the left panel, scroll to the end of the **Metrics** list, and open the **Custom Metrics** selector. 
-- Select **Temperature Monitoring Database App** from the drop down list.  
-- From the **Metric Name** panel, select **Temperature Reading** to display the chart showing our readings.  
+In the *CloudWatch* console, for *Custom Metrics*, choose *Temperature Monitoring Database App*, *Temperature Reading*. Choose *Add to Dashboard* to display this chart with other charts and metrics. Choose *Create Alarm* to define your desired alarm threshold and notification actions.
 
-     ![](images/cloudWatchMetric.png)
+   ![](images/cloudWatchMetric.png)
   
-- Click **Create Alarm** to define your alarm threshold of 80<sup>o</sup>C and the action(s) to take when the alarm conditions are met. 
 
-- Click **Add to Dashboard** to add your temperature readings chart to a CloudWatch Dashboard.
+### Outbound Streaming: Synchronize Updates to Amazon Redshift
 
-In this example we combined a database trigger with an AWS Lambda function to publish database records to Amazon CloudWatch. This allows you to easily leverage all the great monitoring and alerting features of [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) for your existing database application. 
+You can adapt this approach to publish records to other downstream systems. In this example, you use Amazon Kinesis Firehose to stream your temperature readings to an Amazon Redshift data warehouse, where the data can be integrated with other business data and used for reporting and analytics.
 
-
-### Outbound Streaming Example - Synchronize Updates to Amazon Redshift
-
-We can adopt a similar approach to publish records to additional downstream systems, adding even more business value. In this example we will stream our temperature readings to an Amazon Redshift data warehouse, where it can be integrated with other business data and used for reporting and analytics. 
-
-We will use the new [Amazon Kinesis Firehose](https://aws.amazon.com/kinesis/firehose/) service for this example. Here are the steps: 
-   
 1.  Create a target table on your Amazon Redshift cluster:  
 	   ```
 	   CREATE TABLE rs_temp_reading (reading_time TIMESTAMP, reading_value NUMERIC);
 	   ```
 	   
-1. Configure the Amazon Redshift security group. See: [Amazon Redshift and IP Address Access](http://docs.aws.amazon.com/firehose/latest/dev/controlling-access.html#using-iam-rs)  
+1. Configure the [Amazon Redshift security group](http://docs.aws.amazon.com/firehose/latest/dev/controlling-access.html#using-iam-rs)  
 
-1. Create a Kinesis Firehose stream. See: [Create a Delivery Stream to Amazon Redshift](http://docs.aws.amazon.com/firehose/latest/dev/basic-create.html#console-to-redshift)
-   - Set **Delivery stream name** to `FirehoseTempReading`
-   - Set **Redshift table** to `rs_temp_reading`
-   - Set **Redshift COPY Parameters** to `FORMAT AS JSON 'auto'`
+1. Create a [Firehose stream](http://docs.aws.amazon.com/firehose/latest/dev/basic-create.html#console-to-redshift)
+   - For **Delivery stream name**, enter `FirehoseTempReading.`
+   - For **Redshift table**, enter `rs_temp_reading.`
+   - For **Redshift COPY Parameters**, enter `FORMAT AS JSON 'auto'.`
    - Follow the guide for all other settings to create the Delivery Stream.  
 
-1. Edit the the function code for the Lambda function we created in the previous example, `lambdaTempReadingTrigger`. The code below posts new records as JSON objects to the Firehose Delivery Stream:  
+1. Update the Lambda function created in the previous example, `lambdaTempReadingTrigger`, using the sample code below:
     ```
 	import boto3
 	import json
@@ -391,32 +360,23 @@ We will use the new [Amazon Kinesis Firehose](https://aws.amazon.com/kinesis/fir
 		return {"Status":"OK"}      
       ```
        
-   The **Role** assigned to the Lambda function must allow the `firehose:PutRecord` action. Attach a new policy to your Lambda function role as before, this time selecting the **AmazonKinesisFirehoseFullAccess** policy.
+        Assign the policy AmazonKinesisFirehoseFullAccess to the IAM role used by the Lambda function.
 
 	Save and test the function, using the same test input data as before.  
 	After running the test, the **Execution Result** field should display the message: `{"Status":"OK"}`.
    
-Now, when your application inserts a new reading into the `temp_reading` table, the value will be posted to the new Amazon Firehose Delivery Stream, and from there to the `rs_temp_reading` table in your Amazon Redshift data warehouse. 
-
-Test it by simulating another series of new temperature readings, repeating the INSERT statements used above in the CloudWatch example. Wait 5 minutes or so, and then check for data in your new table in the Redshift data warehouse.
+Now, when your application inserts a new reading into the temp_reading table, the value is posted to the new Firehose delivery stream, and from there (after up to 5 minutes) to the rs_temp_reading table in your Amazon Redshift data warehouse. Try it for yourself!
    
    ![](images/redshift.png)
-
-In this example we streamed our inserts to an Amazon Redshift data warehouse. However, using the AWS Lambda trigger function, you could integrate any number of potential downstream systems and workflows.
 
 
 ### Access External Data Example - Read From a Kinesis Stream
 
-We can use synchronous calls to AWS Lambda to access virtually any data from any source that a Lambda function can access (the possibilities are limitless). In this example we'll write a Lambda function that can read messages from an Amazon Kinesis stream shard, and return the messages in the form of JSON objects to the calling SQL code.
+Synchronous calls to Lambda allow your database to tap into virtually any data from any source that a Lambda function can access. In this example, I show how to use a SQL function to read streaming messages from Amazon Kinesis.
 
-1. Create an example Amazon Kinesis stream for testing.
-   - Open the **Kinesis** console.
-   - Select **Kinesis Streams** on the left, and click **Create Stream** in the main panel.
-   - Set **Name** to `MySensorReadings`.
-   - Set **Number of Shards** to 1.
+1. In the Amazon Kinesis console, choose Create Stream. For Name, enter MySensorReadings, and for Number of Shards, enter 1.
    
-1. Populate test data into the example Kinesis stream.
-   On a system where you have configured the [AWS CLI](https://aws.amazon.com/cli/), issue the commands below:
+1. Put some test records into the stream, using the [AWS CLI](https://aws.amazon.com/cli/): 
    ```
    aws kinesis put-record \
                --stream-name "MySensorReadings" \
@@ -426,7 +386,7 @@ We can use synchronous calls to AWS Lambda to access virtually any data from any
                --partition-key "Sensor1" --data '{"time":"2016-02-16 12:30:00","temp":"100"}'
    ```
 
-1. Create a new AWS Lambda Python2.7 function named 'lambdaReadKinesisStream'. Use the following code for the function:  
+1. Create a new AWS Lambda Python2.7 function named 'lambdaReadKinesisStream', using the code below:
 	```
 	import boto3
 	import json
@@ -476,9 +436,9 @@ We can use synchronous calls to AWS Lambda to access virtually any data from any
 	    return output
 	```
 	 
-   The **Role** assigned to the Lambda function must allow the `firehose:PutRecord` action. Attach a new policy to your Lambda function role as before, this time selecting the **AmazonKinesisFullAccess** policy.  
+   Assign the policy AmazonKinesisFullAccess to the IAM role used by the Lambda function.
     	   
-   Save and test the function. When prompted for **Input test event**, paste the sample input below:
+   Save and test the function using this sample JSON input: 
    
    ```
 	{
@@ -486,7 +446,7 @@ We can use synchronous calls to AWS Lambda to access virtually any data from any
 	}
    ```
    
-   After running the test, the **Execution Result** field should display a message like: 
+   The JSON output should contain a Data object with the temp and time fields from your first Amazon Kinesis test record, and a record SequenceNumber and NextShardIterator:
    ```
    {
 	  "Data": {
@@ -499,7 +459,7 @@ We can use synchronous calls to AWS Lambda to access virtually any data from any
    ```
    
    
-1. Log into the database and select the first Kinesis record from the stream, as follows:
+1. Log into the database and select the first Kinesis record from the stream:
 	```
 	SELECT awslambda_fn('lambdaReadKinesisStream','{"StreamName": "MySensorReadings"}') AS kinesistest ;
 	
@@ -561,7 +521,7 @@ We can use synchronous calls to AWS Lambda to access virtually any data from any
    $$ LANGUAGE plpgsql;
    ```
    
-   Let's try reading all the sensor readings in our Kinesis stream. Pass in an empty SequenceNumber to start with the first message:
+   Try reading all the sensor readings in your Kinesis stream. 
    ```
    postgres=# select processSensorReadings('') as lastsequencenumber;
 	NOTICE:  Time "2016-02-16 12:00:00", Temp "99"
@@ -578,18 +538,19 @@ We can use synchronous calls to AWS Lambda to access virtually any data from any
 
 	Try putting some additional messages on the stream, and call the function again, this time passing in the `lastsequencenumber` value returned by the previous call. You will see that it will pick up where it left off, and read only the new messages. 
 	
-In this example we showed you how to iterate through messages on an Amazon Kinesis stream from within your database. Using AWS Lambda  functions, you can integrate any number of potential external datasources, including Amazon DynamoDB, other databases, and external web services, to name just a few.
+In this example we showed you how to iterate through messages on an Amazon Kinesis stream from within your database. Using AWS Lambda functions, you can integrate any number of potential external data sources, including Amazon DynamoDB, other databases, and external web services, to name just a few.
 
 
 ### Incremental modernization
 
-The ability to access Lambda microservices from a relational database allows us to incrementally refactor business logic, systematically eliminating database packages, procedures, functions, and triggers, replacing them with database agnostic services implemented as Lambda functions
-
-This approach enables incremental modernization roadmaps which avoid high-risk ‘boil the ocean’ scenarios often necessitated by highly interdependent legacy SQL code. Following the implementation of a given business logic feature on Lambda, SQL code remaining in the database can continue to access the feature by calling the new Lambda function via a SQL stored procedure or function.
-
-While the Lambda SQL integration is an important enabler for incremental migration, it is not (of course) sufficient to ensure success. Agile software delivery best practices should be embraced, and each iteration should systematically move in the direction of a sound architectural vision. The strategic architecture should implement data access layer services to achieve database independence and introduce flexibility to integrate different persistence layer technologies as appropriate (e.g. caching, noSQL, alternative RDBMS engines, etc.).  
+The ability to access Lambda microservices from a relational database allows you to refactor business logic incrementally, systematically eliminating database packages, procedures, functions, and triggers, replacing them with database-agnostic services implemented as Lambda functions.
   
-In the end, when all the business logic is successfully migrated out of the database, there is no more need in the architecture for the Lambda SQL API. The database has become a pure persistence layer. Here, the API is ultimately a means to an end, making the roadmap possible. 
+This approach enables incremental modernization roadmaps which avoid high-risk ‘boil the ocean’ scenarios often necessitated by highly interdependent legacy SQL code. Following the implementation of a business logic feature on Lambda, SQL code remaining in the database can continue to access the feature by calling the new Lambda function via SQL.
+  
+While the Lambda SQL integration is an important enabler for incremental migration, it is not (of course) sufficient to ensure success. Embrace agile software delivery best practices, systematically moving in the direction of a sound architectural vision with each iteration. Your strategic architecture should incorporate data access layer services to achieve database independence and introduce flexibility to mix and match different persistence layer technologies as appropriate (e.g., caching, noSQL, alternative RDBMS engines, etc.).
+  
+In the end, when all the business logic is successfully migrated out of the database, there may be no more need for the Lambda SQL API. At this point all your business logic is embodied in the Lambda services layer, and the database has become a pure persistence layer. The API is ultimately a means to an end, making the modernization roadmap possible.
+
 
 ![](images/microservicesArch.png)
 
@@ -598,51 +559,67 @@ In the end, when all the business logic is successfully migrated out of the data
 
 #### What happens if the Lambda function fails?
 
-In synchronous mode, fatal errors encountered while launching or running the lambda function will be detected by the user defined function, and an exception will be passed back to the database SQL engine. You can write an exception handler in your SQL code, or simply allow the failure to roll back your transaction.  
+In synchronous mode, fatal errors encountered while launching or running the Lambda function throw an exception back to the database SQL engine. You can write an exception handler in your SQL code, or simply allow the failure to roll back your transaction.
 
-In asynchronous mode, failure to launch the function will result in a SQL exception, but runtime failures encountered during execution of the Lambda function are not detected by the SQL engine.   
-  
+In asynchronous mode, failures to launch the function result in SQL exceptions, but runtime failures encountered during execution are not detected by the SQL engine.
+
 While your SQL transactions can roll back on failure, there is no inherent rollback capability built into Lambda. The effects of any code executed by your Lambda function prior to a failure may be persistent unless you have coded your own rollback or deduplication logic.
 
-Use Cloudwatch to review the health metrics and log files generated by your Lambda function.  
+Use CloudWatch for troubleshooting, and to monitor the health metrics and log files generated by your Lambda functions.
 
-#### Performance 
+#### How does it perform? 
 
-Typically the invocation overhead observed is in the order or 10-20ms per call, but your mileage may vary. Latency will be higher immediately after a Lambda function is created, updated, or if it has not been used recently. For synchronous mode calls, the overall time your function takes depends on the Lambda function execution time, since your SQL will block until a response is received. Be sure to increase the **Timeout** setting from its default value of 3 seconds to avoid timeout exceptions if your function needs more time to run.
+Typically, the invocation overhead observed is in the order or 10-20ms per call, but your mileage may vary. Latency is higher immediately after a Lambda function is created, updated, or if it has not been used recently. For synchronous mode calls, the overall time your function takes depends on what your Lambda function does.
 
-AWS Lambda automatically scales to handle your concurrency needs. See the [AWS Lambda FAQ](https://aws.amazon.com/lambda/faqs/) for more information.
+Lambda automatically scales to handle your concurrency needs. For more information, see the [AWS Lambda FAQ](https://aws.amazon.com/lambda/faqs/).
 
-Your throughput / latency requirements will guide your decisions on how to apply Lambda functions in your application. Experiment and test! 
-You may find that using Lambda functions in row level triggers limits your insert rate beyond the tolerance of your application, in which case you will need to come up with a different approach, probably using micro-batches to amortize the lambda invocation overhead across many rows.  
+Throughput and latency requirements should guide your decisions on how to apply Lambda functions in your application. Experiment and test! You may find that calling Lambda in row level triggers throttles your insert rate beyond the tolerance of your application, in which case you need to come up with a different approach, possibly using micro-batches to amortize the invocation overhead across many rows.
+
 
 #### Can I restrict user access?
 
-You can manage permissions on the lambda user defined functions as you would with any other database object. 
+Yes, you manage permissions on the Lambda UDFs as with any other database object.
 
-For simplicity, in our examples in PART1 we allowed any user to invoke any AWS Lambda function by:
-a) assigning `AWSLambdaFullAccess` policy to the database EC2 instance role (allows the database instance to invoke any Lambda function)
-a) granting public execute privileges to our user defined functions (allows any user to invoke any Lambda function)
+For simplicity, the examples above allow any database user to invoke any Lambda function by:  
+-  Assigning the permissive `AWSLambdaFullAccess` policy to the database EC2 instance role
+-  Granting public execute privileges to your UDFs
 
-You can (and probably should) implement less permissive policies, for example:
-- modify the EC2 instance role policy to allow invoke access only for specified Lambda functions.
-- create additional user defined SQL functions to serve as wrappers with specific parameters. Grant execute privileges to users on the wrapper functions only, while denying access to the general purpose functions. 
-
+In production, you should probably implement less permissive policies, for example:  
+-  Modify the EC2 instance role policy to allow access to specified Lambda functions only.  
+-  Create additional user-defined SQL functions as wrappers to enforce specific parameters.  
+   Grant execute privileges on the wrapper functions only, and deny access to the general purpose functions.  
+  
 #### Can my Lambda functions read or update the database directly?  
 
 Yes, of course. Your Lambda function can execute SQL on the database you're calling it from, or on any other database / data source for which it has connection credentials. Create a [deployment package](http://docs.aws.amazon.com/lambda/latest/dg/deployment-package-v2.html) which includes your function code along with all database client libraries that your code uses to interact with the database.  
 
-VPC support was recently introduced for AWS Lambda - this feature allows you to run Lambda functions inside your VPC, allowing your code to access database resources running in private subnets inside your VPC. 
+Amazon VPC support was recently introduced for AWS Lambda; this feature allows your code to access database resources running in private subnets inside your VPC.
 
-#### Handling JSON formatted input and output
+#### How do I handle JSON formatted input and output?
 
-Use the JSON features offered by your database to parse JSON objects returned by your Lambda function, and/or to prepare JSON strings to pass to your Lambda function as input - see the "Read From Kinesis Stream" example above. 
+The JSON features offered by your database may help with JSON handling, as illustrated in the "Read from an Amazon Kinesis stream" example above.
 
-#### Can my Lambda functions accept multi-row input, or produce multi-row output?  
+#### Can Lambda functions handle batches, multi-row input or output?
 
-Here are a few options you can consider for multi-record input and output:   
+Here are a few options you can consider for working with record batches:  
 - Flatten multiple records into a JSON array; this method is limited by input/output JSON string length restrictions.    
-- Buffer multiple records in Kinesis, using the input and output streaming techniques illustrated above. 
-- Have your Lambda function connect to the database, and use named tables for input and output. 
+- Buffer multiple records in Kinesis, using the input and output streaming techniques illustrated above.   
+- Have your Lambda function connect to the database, and use named tables for input and output.   
+
+#### Can’t I call AWS services, such as CloudWatch or Firehose, directly from the database function, without needing a Lambda function in the middle? 
+  
+Indeed. Using a similar technique, the AWS SDK could be used to directly invoke any other AWS service from a database UDF. 
+  
+However, by using Lambda consistently, you avoid the need to create separate database specific UDFs for each service, and you start to move toward a microservices architecture, with flexibility to deploy logic enhancements and changes to functions that are now abstracted from the database. 
+  
+#### Will the same technique work on other databases, such as MySQL or MS SQL Server?
+  
+Yes, as long as the database supports user defined functions defined in a programming language supported by an AWS SDK. 
+  
+The project GitHub repository includes a prototype implementation for MySQL, using C++ UDF extensions which leverage the new AWS C++ SDK. 
+  
+It should also be possible to apply the same techniques to MS SQL Server by defining UDFs in .NET, leveraging the AWS .NET SDK. 
+
 
 #### Does this approach work on Amazon RDS databases?
 
@@ -650,13 +627,8 @@ No, not currently.
 
 ## Conclusion
 
-We have seen you how you can integrate your existing EC2 PostgreSQL or Oracle relational database with AWS Lambda. We have also reviewed some examples of how you might use this capability to benefit from some of the many advantages of a serverless, microservices architecture, either to enhance the capabilities of your existing application, or to start down a path of incremental modernization.
-
-Are these techniques useful? Please feel free to ask questions, and to share your thoughts on the benefits and/or limitations of the approach and use cases. We'd love to hear what you think!  
-
-
-
-
-
+In this post, you’ve seen how you can integrate your existing EC2 PostgreSQL or Oracle database with AWS Lambda. You’ve also reviewed some examples of how you might use this capability to benefit from some of the many advantages of a serverless, microservices architecture, either to enhance the capabilities of your existing application, or to start down a path of incremental modernization.
+  
+Are these techniques useful? Please feel free to ask questions, and to share your thoughts. We'd love to hear what you think!
 
 
