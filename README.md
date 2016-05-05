@@ -1,6 +1,6 @@
 # From SQL to Microservices: Integrating AWS Lambda with Relational Databases 
 
-This is the code repository associated with the AWS Big Data Blog post, ["From SQL to Microservices: Integrating AWS Lambda with Relational Databases"](http://blogs.aws.amazon.com/bigdata/).
+This is the code repository associated with the AWS Big Data Blog post, ["From SQL to Microservices: Integrating AWS Lambda with Relational Databases"](http://blogs.aws.amazon.com/bigdata/post/Tx3IRFXZW1YRIVW/From-SQL-to-Microservices-Integrating-AWS-Lambda-with-Relational-Databases).
 
 ----------
 
