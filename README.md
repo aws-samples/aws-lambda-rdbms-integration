@@ -6,7 +6,7 @@ This is the code repository associated with the AWS Big Data Blog post, ["From S
 
 With a simple internet search, you will quickly find many articles describing the appeal of [Microservices](http://martinfowler.com/articles/microservices.html) architectures, and explaining why [AWS Lambda](https://aws.amazon.com/lambda/) is an excellent microservices compute platform. 
  
-Did you know that it may be possible for you to take advantage of this transformational technology from within your existing relational database application? In this post, we explore how to integrate your EC2 hosted Oracle or PostgreSQL database with AWS Lambda, allowing your database application to participate in a microservices architecture.
+Did you know that it may be possible for you to take advantage of this transformational technology from within your existing relational database application? In this post, we explore how to integrate your Amazon EC2 hosted Oracle or PostgreSQL database with AWS Lambda, allowing your database application to participate in a microservices architecture.
 
 ![](images/LambdaSQLAPI.png)
 
@@ -221,7 +221,7 @@ GRANT EXECUTE ON FUNCTION awslambda_fn(text, text) TO PUBLIC;
 
 1. Log into the database, and call the awslambda_fn function, passing the name of the test Lambda function and a JSON input parameter string:
    ```
-   psql -U postgres
+   psql -U postgres  
    postgres=# SELECT awslambda_fn('lambdaTest','{"name":"bob"}') AS lambdatest ;  
    
                           lambdatest
