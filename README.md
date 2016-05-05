@@ -4,10 +4,8 @@ This is the code repository associated with the AWS Big Data Blog post, ["From S
 
 ----------
 
-With a simple internet search, you will quickly find many articles describing the appeal of [Microservices](http://martinfowler.com/articles/microservices.html) architectures, and explaining why [AWS Lambda](https://aws.amazon.com/lambda/) is an excellent microservices compute platform. 
- 
-Did you know that it may be possible for you to take advantage of this transformational technology from within your existing relational database application? In this post, we explore how to integrate your Amazon EC2 hosted Oracle or PostgreSQL database with AWS Lambda, allowing your database application to participate in a microservices architecture.
-
+[AWS Lambda](https://aws.amazon.com/lambda/) has emerged as excellent compute platform for modern [microservices](http://martinfowler.com/articles/microservices.html) architecture, driving dramatic advancements in flexibility, resilience, scale and cost effectiveness. Many customers can take advantage of this transformational technology from within their existing relational database application. In this post, we explore how to integrate your Amazon EC2 hosted Oracle or PostgreSQL database with AWS Lambda, allowing your database application to participate in a microservices architecture.
+  
 ![](images/LambdaSQLAPI.png)
 
 Here are a few of the reasons why you might find this capability useful:
