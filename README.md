@@ -232,7 +232,7 @@ GRANT EXECUTE ON FUNCTION awslambda_fn(text, text) TO PUBLIC;
    
 Success! Using a PostgreSQL SQL select statement, you have successfully invoked your test function on Lambda, and retrieved the results.
 
-Now, explore some interesting use cases for your new Lambda interface.
+Now, let's explore some interesting use cases for your new Lambda interface.
 
 ## Part 2 - Example Use Cases
 
@@ -246,7 +246,7 @@ Assume that you have an existing application which uses an Oracle database to tr
 CREATE TABLE temp_reading (reading_time TIMESTAMP, reading_value NUMERIC);
 ```
 
-You can forward new records via Lambda to CloudWatch, allowing you to plots graphs of the temperature readings, and to configure alerts when a reading exceeds a threshold.
+You can forward new records via Lambda to CloudWatch, allowing you to plot graphs of the temperature readings, and to configure alerts when a reading exceeds a threshold.
 
 1. Create a new Python function in AWS Lambda by following the process used [earlier](#create-test-function-in-lambda).  
    Name the function `lambdaTempReadingTrigger`, and use the function code below:
